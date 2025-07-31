@@ -6,6 +6,15 @@ This is a Telegram bot that helps users translate onomatopoeia (sound words) bet
 
 ## Recent Changes (July 31, 2025)
 
+✅ **Enhanced Broadcast System**
+- Added support for media broadcasts (photos, videos, stickers, documents)
+- Implemented broadcast with inline buttons functionality  
+- Added `/broadcast_buttons` command for rich message broadcasts
+- Enhanced admin panel with detailed broadcast instructions
+- Support for forwarding media messages to all users
+- URL validation for button links
+- Three broadcast types: text, media, and buttons
+
 ✅ **Admin Panel Fully Functional**
 - Fixed admin panel callback handlers - all buttons now work correctly
 - Added comprehensive admin panel navigation with sub-menus

@@ -484,14 +484,74 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Невірний ID користувача.")
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /broadcast command"""
+    """Handle /broadcast command - supports text, media, and inline buttons"""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас немає прав доступу до цієї команди.")
         return
     
+    message = update.message
+    
+    # Check if this is a reply to a message (for media broadcast)
+    if message.reply_to_message:
+        # Broadcasting the replied message (can be media)
+        reply_msg = message.reply_to_message
+        
+        # Get all non-banned users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        if not active_users:
+            await update.message.reply_text("❌ Немає активних користувачів для розсилки.")
+            return
+        
+        # Store the message for broadcast confirmation
+        context.user_data['broadcast_message'] = reply_msg
+        context.user_data['broadcast_type'] = 'media'
+        
+        # Create preview text
+        preview_text = "📢 **Підтвердження розсилки медіа**\n\n"
+        if reply_msg.text:
+            preview_text += f"Текст: _{reply_msg.text[:100]}{'...' if len(reply_msg.text) > 100 else ''}_\n"
+        elif reply_msg.photo:
+            preview_text += "Тип: Фото\n"
+        elif reply_msg.video:
+            preview_text += "Тип: Відео\n"
+        elif reply_msg.document:
+            preview_text += "Тип: Документ\n"
+        elif reply_msg.audio:
+            preview_text += "Тип: Аудіо\n"
+        elif reply_msg.voice:
+            preview_text += "Тип: Голосове повідомлення\n"
+        elif reply_msg.sticker:
+            preview_text += "Тип: Стікер\n"
+        
+        preview_text += f"\nБуде надіслано {len(active_users)} користувачам.\n\nПродовжити?"
+        
+        # Confirm broadcast
+        keyboard = [
+            [InlineKeyboardButton("✅ Так, надіслати", callback_data="confirm_media_broadcast")],
+            [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_broadcast")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text(preview_text, reply_markup=reply_markup, parse_mode='Markdown')
+        return
+    
+    # Regular text broadcast
     if not context.args:
         await update.message.reply_text(
-            "❌ Неправильний формат. Використовуйте:\n`/broadcast повідомлення`",
+            "📢 **Розсилка повідомлень**\n\n"
+            "**Варіанти використання:**\n\n"
+            "1️⃣ **Текстова розсилка:**\n"
+            "`/broadcast ваше повідомлення`\n\n"
+            "2️⃣ **Медіа розсилка:**\n"
+            "Відповідь на повідомлення з медіа командою `/broadcast`\n\n"
+            "3️⃣ **Розсилка з кнопками:**\n"
+            "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "**Приклади:**\n"
+            "• `/broadcast Привіт всім користувачам!`\n"
+            "• Відповісти на фото з `/broadcast`\n"
+            "• `/broadcast_buttons Новини бота | Канал:https://t.me/channel | Сайт:https://example.com`",
             parse_mode='Markdown'
         )
         return
@@ -506,9 +566,13 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Немає активних користувачів для розсилки.")
         return
     
+    # Store for confirmation
+    context.user_data['broadcast_text'] = message_text
+    context.user_data['broadcast_type'] = 'text'
+    
     # Confirm broadcast
     keyboard = [
-        [InlineKeyboardButton("✅ Так, надіслати", callback_data=f"confirm_broadcast:{message_text}")],
+        [InlineKeyboardButton("✅ Так, надіслати", callback_data="confirm_text_broadcast")],
         [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_broadcast")]
     ]
     
@@ -518,6 +582,96 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Повідомлення буде надіслано {len(active_users)} користувачам:\n\n"
         f"_{message_text}_\n\n"
         f"Продовжити?",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def broadcast_buttons_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /broadcast_buttons command - send messages with inline buttons"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ У вас немає прав доступу до цієї команди.")
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "📢 **Розсилка з кнопками**\n\n"
+            "**Формат:**\n"
+            "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "**Приклади:**\n"
+            "• `/broadcast_buttons Привіт! | Наш канал:https://t.me/mychannel`\n"
+            "• `/broadcast_buttons Новини | Канал:https://t.me/news | Сайт:https://example.com`\n"
+            "• `/broadcast_buttons Важливе оновлення | Детальніше:https://link.com | Підтримка:https://support.com`\n\n"
+            "⚠️ URL повинні починатися з http:// або https://",
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Parse input
+    full_text = ' '.join(context.args)
+    parts = full_text.split(' | ')
+    
+    if len(parts) < 2:
+        await update.message.reply_text(
+            "❌ Неправильний формат. Використовуйте:\n"
+            "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`",
+            parse_mode='Markdown'
+        )
+        return
+    
+    message_text = parts[0].strip()
+    buttons_data = []
+    
+    # Parse buttons
+    for button_part in parts[1:]:
+        if ':' not in button_part:
+            await update.message.reply_text(
+                f"❌ Неправильний формат кнопки: '{button_part}'\n"
+                "Використовуйте: `назва:URL`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        button_name, button_url = button_part.split(':', 1)
+        button_name = button_name.strip()
+        button_url = button_url.strip()
+        
+        if not button_url.startswith(('http://', 'https://')):
+            await update.message.reply_text(
+                f"❌ URL кнопки '{button_name}' повинен починатися з http:// або https://",
+                parse_mode='Markdown'
+            )
+            return
+        
+        buttons_data.append((button_name, button_url))
+    
+    # Get all non-banned users
+    users = db.get_all_users()
+    active_users = [u for u in users if not u['is_banned']]
+    
+    if not active_users:
+        await update.message.reply_text("❌ Немає активних користувачів для розсилки.")
+        return
+    
+    # Store data for confirmation
+    context.user_data['broadcast_text'] = message_text
+    context.user_data['broadcast_buttons'] = buttons_data
+    context.user_data['broadcast_type'] = 'buttons'
+    
+    # Create preview
+    buttons_preview = "\n".join([f"• {name} → {url}" for name, url in buttons_data])
+    
+    # Confirm broadcast
+    keyboard = [
+        [InlineKeyboardButton("✅ Так, надіслати", callback_data="confirm_buttons_broadcast")],
+        [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_broadcast")]
+    ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"📢 **Підтвердження розсилки з кнопками**\n\n"
+        f"**Текст:** _{message_text}_\n\n"
+        f"**Кнопки:**\n{buttons_preview}\n\n"
+        f"Буде надіслано {len(active_users)} користувачам.\n\nПродовжити?",
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
@@ -745,6 +899,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     data = query.data
     
     if data.startswith("confirm_broadcast:"):
+        # Old format support - backward compatibility
         message_text = data.split(":", 1)[1]
         
         # Get all active users
@@ -768,6 +923,118 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         
         await query.edit_message_text(
             f"✅ **Розсилка завершена**\n\n"
+            f"📤 Надіслано: {sent_count}\n"
+            f"❌ Помилок: {failed_count}"
+        )
+    
+    elif data == "confirm_text_broadcast":
+        # Text broadcast
+        message_text = context.user_data.get('broadcast_text', '')
+        
+        # Get all active users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        sent_count = 0
+        failed_count = 0
+        
+        for user in active_users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=f"📢 **Повідомлення від адміністратора:**\n\n{message_text}",
+                    parse_mode='Markdown'
+                )
+                sent_count += 1
+            except Exception as e:
+                failed_count += 1
+                logging.error(f"Failed to send broadcast to {user['user_id']}: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **Розсилка завершена**\n\n"
+            f"📤 Надіслано: {sent_count}\n"
+            f"❌ Помилок: {failed_count}"
+        )
+    
+    elif data == "confirm_media_broadcast":
+        # Media broadcast
+        broadcast_message = context.user_data.get('broadcast_message')
+        
+        if not broadcast_message:
+            await query.edit_message_text("❌ Помилка: повідомлення для розсилки не знайдено.")
+            return
+        
+        # Get all active users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        sent_count = 0
+        failed_count = 0
+        
+        for user in active_users:
+            try:
+                # Send admin header first
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text="📢 **Повідомлення від адміністратора:**",
+                    parse_mode='Markdown'
+                )
+                
+                # Forward the media message
+                await context.bot.forward_message(
+                    chat_id=user['user_id'],
+                    from_chat_id=broadcast_message.chat_id,
+                    message_id=broadcast_message.message_id
+                )
+                sent_count += 1
+            except Exception as e:
+                failed_count += 1
+                logging.error(f"Failed to send media broadcast to {user['user_id']}: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **Медіа розсилка завершена**\n\n"
+            f"📤 Надіслано: {sent_count}\n"
+            f"❌ Помилок: {failed_count}"
+        )
+    
+    elif data == "confirm_buttons_broadcast":
+        # Buttons broadcast
+        message_text = context.user_data.get('broadcast_text', '')
+        buttons_data = context.user_data.get('broadcast_buttons', [])
+        
+        if not buttons_data:
+            await query.edit_message_text("❌ Помилка: дані кнопок не знайдено.")
+            return
+        
+        # Create keyboard
+        keyboard = []
+        for button_name, button_url in buttons_data:
+            keyboard.append([InlineKeyboardButton(button_name, url=button_url)])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Get all active users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        sent_count = 0
+        failed_count = 0
+        
+        for user in active_users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text=f"📢 **Повідомлення від адміністратора:**\n\n{message_text}",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                sent_count += 1
+            except Exception as e:
+                failed_count += 1
+                logging.error(f"Failed to send buttons broadcast to {user['user_id']}: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **Розсилка з кнопками завершена**\n\n"
             f"📤 Надіслано: {sent_count}\n"
             f"❌ Помилок: {failed_count}"
         )
@@ -852,11 +1119,18 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         
         await query.edit_message_text(
             "📢 **Розсилка повідомлень**\n\n"
-            "Для відправки повідомлення всім користувачам використовуйте:\n\n"
+            "**Доступні типи розсилки:**\n\n"
+            "1️⃣ **Текстова:**\n"
             "`/broadcast ваше повідомлення`\n\n"
-            "**Приклад:**\n"
-            "`/broadcast Привіт! Додано нові ономатопеї в базу.`\n\n"
-            "⚠️ Розсилка буде надіслана всім активним користувачам!",
+            "2️⃣ **Медіа (фото, відео, стікери):**\n"
+            "Відповідь на повідомлення з `/broadcast`\n\n"
+            "3️⃣ **З кнопками:**\n"
+            "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "**Приклади:**\n"
+            "• `/broadcast Привіт всім!`\n"
+            "• Відповісти на фото з `/broadcast`\n"
+            "• `/broadcast_buttons Новини | Канал:https://t.me/channel`\n\n"
+            "⚠️ Розсилка надсилається всім активним користувачам!",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
@@ -1046,6 +1320,7 @@ def main():
     application.add_handler(CommandHandler("ban", ban_command))
     application.add_handler(CommandHandler("unban", unban_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
+    application.add_handler(CommandHandler("broadcast_buttons", broadcast_buttons_command))
     application.add_handler(CommandHandler("list", list_command))
     
     # Add callback query handler for admin panel
