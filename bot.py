@@ -801,6 +801,236 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
+    
+    elif data == "admin_onomatopoeia":
+        # Show onomatopoeia management options
+        keyboard = [
+            [InlineKeyboardButton("📋 Показати всі", callback_data="show_all_onomatopoeia")],
+            [InlineKeyboardButton("➕ Інструкції для додавання", callback_data="add_instructions")],
+            [InlineKeyboardButton("🗑️ Інструкції для видалення", callback_data="delete_instructions")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "📝 **Управління ономатопеями**\n\nОберіть дію:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "admin_users":
+        # Show user management options
+        users = db.get_all_users()
+        total_users = len(users)
+        banned_users = len([u for u in users if u['is_banned']])
+        active_users = total_users - banned_users
+        
+        keyboard = [
+            [InlineKeyboardButton("👥 Показати всіх користувачів", callback_data="show_all_users")],
+            [InlineKeyboardButton("🚫 Заблоковані користувачі", callback_data="show_banned_users")],
+            [InlineKeyboardButton("📋 Інструкції ban/unban", callback_data="ban_instructions")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"👥 **Управління користувачами**\n\n"
+            f"• Всього: {total_users}\n"
+            f"• Активних: {active_users}\n"
+            f"• Заблокованих: {banned_users}\n\n"
+            f"Оберіть дію:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "admin_broadcast":
+        # Show broadcast instructions
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "📢 **Розсилка повідомлень**\n\n"
+            "Для відправки повідомлення всім користувачам використовуйте:\n\n"
+            "`/broadcast ваше повідомлення`\n\n"
+            "**Приклад:**\n"
+            "`/broadcast Привіт! Додано нові ономатопеї в базу.`\n\n"
+            "⚠️ Розсилка буде надіслана всім активним користувачам!",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "admin_main":
+        # Return to main admin panel
+        keyboard = [
+            [InlineKeyboardButton("📝 Управління ономатопеями", callback_data="admin_onomatopoeia")],
+            [InlineKeyboardButton("👥 Управління користувачами", callback_data="admin_users")],
+            [InlineKeyboardButton("📢 Розсилка", callback_data="admin_broadcast")],
+            [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🔧 **Панель адміністратора**\n\nОберіть опцію:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "show_all_onomatopoeia":
+        # Show all onomatopoeia in chunks
+        onomatopoeia_list = db.get_all_onomatopoeia()
+        
+        if not onomatopoeia_list:
+            keyboard = [
+                [InlineKeyboardButton("🔙 Назад", callback_data="admin_onomatopoeia")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "📝 База ономатопей порожня.",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Show first 20 entries
+        chunk = onomatopoeia_list[:20]
+        text = f"📝 **База ономатопей (показано {len(chunk)} з {len(onomatopoeia_list)}):**\n\n"
+        for english, ukrainian in chunk:
+            text += f"• {english} → {ukrainian}\n"
+        
+        if len(onomatopoeia_list) > 20:
+            text += f"\n... та ще {len(onomatopoeia_list) - 20} записів"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_onomatopoeia")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    elif data == "add_instructions":
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_onomatopoeia")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "➕ **Додавання ономатопей**\n\n"
+            "Використовуйте команду:\n"
+            "`/add english - українська`\n\n"
+            "**Приклади:**\n"
+            "`/add buzz - дзижчання`\n"
+            "`/add meow - мяу`\n"
+            "`/add splash - плюх`\n\n"
+            "⚠️ Формат обов'язковий: англійське слово, пробіл, дефіс, пробіл, українське слово",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "delete_instructions":
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_onomatopoeia")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🗑️ **Видалення ономатопей**\n\n"
+            "Використовуйте команду:\n"
+            "`/delete english_word`\n\n"
+            "**Приклади:**\n"
+            "`/delete buzz`\n"
+            "`/delete meow`\n"
+            "`/delete splash`\n\n"
+            "⚠️ Видаляється тільки англійське слово (без українського перекладу)",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    elif data == "show_all_users":
+        users = db.get_all_users()
+        
+        if not users:
+            keyboard = [
+                [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "👥 Користувачів немає.",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Show first 10 users
+        text = f"👥 **Користувачі ({len(users)} всього):**\n\n"
+        for i, user in enumerate(users[:10]):
+            status = "🚫" if user['is_banned'] else "✅"
+            username = f"@{user['username']}" if user['username'] else "немає"
+            text += f"{status} **ID:** {user['user_id']}\n"
+            text += f"   **Username:** {username}\n"
+            if user['first_name']:
+                text += f"   **Ім'я:** {user['first_name']}\n"
+            text += "\n"
+        
+        if len(users) > 10:
+            text += f"... та ще {len(users) - 10} користувачів"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    elif data == "show_banned_users":
+        users = db.get_all_users()
+        banned_users = [u for u in users if u['is_banned']]
+        
+        if not banned_users:
+            keyboard = [
+                [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "🚫 Заблокованих користувачів немає.",
+                reply_markup=reply_markup
+            )
+            return
+        
+        text = f"🚫 **Заблоковані користувачі ({len(banned_users)}):**\n\n"
+        for user in banned_users:
+            username = f"@{user['username']}" if user['username'] else "немає"
+            text += f"**ID:** {user['user_id']}\n"
+            text += f"**Username:** {username}\n"
+            if user['first_name']:
+                text += f"**Ім'я:** {user['first_name']}\n"
+            text += "\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    
+    elif data == "ban_instructions":
+        keyboard = [
+            [InlineKeyboardButton("🔙 Назад", callback_data="admin_users")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🚫 **Блокування користувачів**\n\n"
+            "**Заблокувати:**\n"
+            "`/ban user_id`\n\n"
+            "**Розблокувати:**\n"
+            "`/unban user_id`\n\n"
+            "**Приклади:**\n"
+            "`/ban 123456789`\n"
+            "`/unban 123456789`\n\n"
+            "⚠️ User ID можна знайти в списку користувачів або в повідомленнях від них",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 def main():
     """Main function to run the bot"""

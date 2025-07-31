@@ -4,7 +4,20 @@
 
 This is a Telegram bot that helps users translate onomatopoeia (sound words) between English and Ukrainian. The bot includes an admin panel for managing the onomatopoeia database, user administration, and broadcasting capabilities. It's built using Python with the python-telegram-bot library and SQLite for data storage.
 
-## Recent Changes (July 30, 2025)
+## Recent Changes (July 31, 2025)
+
+✅ **Admin Panel Fully Functional**
+- Fixed admin panel callback handlers - all buttons now work correctly
+- Added comprehensive admin panel navigation with sub-menus
+- Implemented detailed onomatopoeia management interface
+- Added user management with banned users display
+- Created instruction panels for all admin commands
+- All admin features fully operational:
+  - Statistics panel with user and data counts
+  - Onomatopoeia management (view all, add/delete instructions)
+  - User management (view all users, banned users, ban/unban instructions)
+  - Broadcast system with detailed instructions
+  - Full navigation with back buttons between all menus
 
 ✅ **Bot Successfully Deployed and Running**
 - Complete rewrite of bot architecture into single consolidated file (bot.py)
