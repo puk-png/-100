@@ -548,10 +548,13 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Відповідь на повідомлення з медіа командою `/broadcast`\n\n"
             "3️⃣ **Розсилка з кнопками:**\n"
             "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "4️⃣ **Медіа + кнопки:**\n"
+            "Відповідь на медіа з `/broadcast_buttons кнопка1:url1 | кнопка2:url2`\n\n"
             "**Приклади:**\n"
             "• `/broadcast Привіт всім користувачам!`\n"
             "• Відповісти на фото з `/broadcast`\n"
-            "• `/broadcast_buttons Новини бота | Канал:https://t.me/channel | Сайт:https://example.com`",
+            "• `/broadcast_buttons Новини бота | Канал:https://t.me/channel | Сайт:https://example.com`\n"
+            "• Відповісти на відео з `/broadcast_buttons Канал:https://t.me/channel`",
             parse_mode='Markdown'
         )
         return
@@ -592,15 +595,112 @@ async def broadcast_buttons_command(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text("❌ У вас немає прав доступу до цієї команди.")
         return
     
+    message = update.message
+    
+    # Check if this is a reply to a message (for media + buttons broadcast)
+    if message.reply_to_message:
+        # Broadcasting media with buttons
+        reply_msg = message.reply_to_message
+        
+        if not context.args:
+            await update.message.reply_text(
+                "📢 **Медіа розсилка з кнопками**\n\n"
+                "**Формат:**\n"
+                "`/broadcast_buttons кнопка1:url1 | кнопка2:url2`\n\n"
+                "**Приклади:**\n"
+                "• `/broadcast_buttons Наш канал:https://t.me/mychannel`\n"
+                "• `/broadcast_buttons Канал:https://t.me/news | Сайт:https://example.com`\n\n"
+                "⚠️ URL повинні починатися з http:// або https://\n"
+                "📎 Медіа буде додане автоматично з повідомлення вище",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Parse buttons only (no text needed for media)
+        full_text = ' '.join(context.args)
+        parts = full_text.split(' | ')
+        buttons_data = []
+        
+        # Parse buttons
+        for button_part in parts:
+            if ':' not in button_part:
+                await update.message.reply_text(
+                    f"❌ Неправильний формат кнопки: '{button_part}'\n"
+                    "Використовуйте: `назва:URL`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            button_name, button_url = button_part.split(':', 1)
+            button_name = button_name.strip()
+            button_url = button_url.strip()
+            
+            if not button_url.startswith(('http://', 'https://')):
+                await update.message.reply_text(
+                    f"❌ URL кнопки '{button_name}' повинен починатися з http:// або https://",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            buttons_data.append((button_name, button_url))
+        
+        # Get all non-banned users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        if not active_users:
+            await update.message.reply_text("❌ Немає активних користувачів для розсилки.")
+            return
+        
+        # Store data for confirmation
+        context.user_data['broadcast_message'] = reply_msg
+        context.user_data['broadcast_buttons'] = buttons_data
+        context.user_data['broadcast_type'] = 'media_buttons'
+        
+        # Create preview
+        buttons_preview = "\n".join([f"• {name} → {url}" for name, url in buttons_data])
+        media_type = "Текст" if reply_msg.text else "Медіа"
+        if reply_msg.photo:
+            media_type = "Фото"
+        elif reply_msg.video:
+            media_type = "Відео"
+        elif reply_msg.document:
+            media_type = "Документ"
+        elif reply_msg.audio:
+            media_type = "Аудіо"
+        elif reply_msg.sticker:
+            media_type = "Стікер"
+        
+        # Confirm broadcast
+        keyboard = [
+            [InlineKeyboardButton("✅ Так, надіслати", callback_data="confirm_media_buttons_broadcast")],
+            [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_broadcast")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"📢 **Підтвердження медіа розсилки з кнопками**\n\n"
+            f"**Тип медіа:** {media_type}\n\n"
+            f"**Кнопки:**\n{buttons_preview}\n\n"
+            f"Буде надіслано {len(active_users)} користувачам.\n\nПродовжити?",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Regular text + buttons broadcast
     if not context.args:
         await update.message.reply_text(
             "📢 **Розсилка з кнопками**\n\n"
-            "**Формат:**\n"
+            "**Формати:**\n\n"
+            "1️⃣ **Текст + кнопки:**\n"
             "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "2️⃣ **Медіа + кнопки:**\n"
+            "Відповідь на медіа з `/broadcast_buttons кнопка1:url1 | кнопка2:url2`\n\n"
             "**Приклади:**\n"
             "• `/broadcast_buttons Привіт! | Наш канал:https://t.me/mychannel`\n"
             "• `/broadcast_buttons Новини | Канал:https://t.me/news | Сайт:https://example.com`\n"
-            "• `/broadcast_buttons Важливе оновлення | Детальніше:https://link.com | Підтримка:https://support.com`\n\n"
+            "• Відповісти на фото з `/broadcast_buttons Канал:https://t.me/news`\n\n"
             "⚠️ URL повинні починатися з http:// або https://",
             parse_mode='Markdown'
         )
@@ -1039,6 +1139,141 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             f"❌ Помилок: {failed_count}"
         )
     
+    elif data == "confirm_media_buttons_broadcast":
+        # Media + buttons broadcast
+        broadcast_message = context.user_data.get('broadcast_message')
+        buttons_data = context.user_data.get('broadcast_buttons', [])
+        
+        if not broadcast_message or not buttons_data:
+            await query.edit_message_text("❌ Помилка: дані для розсилки не знайдено.")
+            return
+        
+        # Create keyboard
+        keyboard = []
+        for button_name, button_url in buttons_data:
+            keyboard.append([InlineKeyboardButton(button_name, url=button_url)])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Get all active users
+        users = db.get_all_users()
+        active_users = [u for u in users if not u['is_banned']]
+        
+        sent_count = 0
+        failed_count = 0
+        
+        for user in active_users:
+            try:
+                # Send admin header first
+                await context.bot.send_message(
+                    chat_id=user['user_id'],
+                    text="📢 **Повідомлення від адміністратора:**",
+                    parse_mode='Markdown'
+                )
+                
+                # For media messages, we need to handle different types
+                if broadcast_message.photo:
+                    # Send photo with buttons
+                    photo = broadcast_message.photo[-1].file_id  # Get highest resolution
+                    caption = broadcast_message.caption or ""
+                    await context.bot.send_photo(
+                        chat_id=user['user_id'],
+                        photo=photo,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown' if caption else None
+                    )
+                elif broadcast_message.video:
+                    # Send video with buttons
+                    video = broadcast_message.video.file_id
+                    caption = broadcast_message.caption or ""
+                    await context.bot.send_video(
+                        chat_id=user['user_id'],
+                        video=video,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown' if caption else None
+                    )
+                elif broadcast_message.document:
+                    # Send document with buttons
+                    document = broadcast_message.document.file_id
+                    caption = broadcast_message.caption or ""
+                    await context.bot.send_document(
+                        chat_id=user['user_id'],
+                        document=document,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown' if caption else None
+                    )
+                elif broadcast_message.audio:
+                    # Send audio with buttons
+                    audio = broadcast_message.audio.file_id
+                    caption = broadcast_message.caption or ""
+                    await context.bot.send_audio(
+                        chat_id=user['user_id'],
+                        audio=audio,
+                        caption=caption,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown' if caption else None
+                    )
+                elif broadcast_message.voice:
+                    # Send voice message, then buttons as separate message
+                    voice = broadcast_message.voice.file_id
+                    await context.bot.send_voice(
+                        chat_id=user['user_id'],
+                        voice=voice
+                    )
+                    # Send buttons as separate message since voice doesn't support inline keyboards
+                    await context.bot.send_message(
+                        chat_id=user['user_id'],
+                        text="👆 Голосове повідомлення вище",
+                        reply_markup=reply_markup
+                    )
+                elif broadcast_message.sticker:
+                    # Send sticker, then buttons as separate message
+                    sticker = broadcast_message.sticker.file_id
+                    await context.bot.send_sticker(
+                        chat_id=user['user_id'],
+                        sticker=sticker
+                    )
+                    # Send buttons as separate message since stickers don't support inline keyboards
+                    await context.bot.send_message(
+                        chat_id=user['user_id'],
+                        text="👆 Стікер вище",
+                        reply_markup=reply_markup
+                    )
+                elif broadcast_message.text:
+                    # Send text with buttons
+                    await context.bot.send_message(
+                        chat_id=user['user_id'],
+                        text=broadcast_message.text,
+                        reply_markup=reply_markup,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    # Fallback: forward message and send buttons separately
+                    await context.bot.forward_message(
+                        chat_id=user['user_id'],
+                        from_chat_id=broadcast_message.chat_id,
+                        message_id=broadcast_message.message_id
+                    )
+                    await context.bot.send_message(
+                        chat_id=user['user_id'],
+                        text="👆 Повідомлення вище",
+                        reply_markup=reply_markup
+                    )
+                
+                sent_count += 1
+            except Exception as e:
+                failed_count += 1
+                logging.error(f"Failed to send media+buttons broadcast to {user['user_id']}: {e}")
+        
+        await query.edit_message_text(
+            f"✅ **Медіа розсилка з кнопками завершена**\n\n"
+            f"📤 Надіслано: {sent_count}\n"
+            f"❌ Помилок: {failed_count}"
+        )
+    
     elif data == "cancel_broadcast":
         await query.edit_message_text("❌ Розсилка скасована.")
     
@@ -1126,10 +1361,13 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
             "Відповідь на повідомлення з `/broadcast`\n\n"
             "3️⃣ **З кнопками:**\n"
             "`/broadcast_buttons текст | кнопка1:url1 | кнопка2:url2`\n\n"
+            "4️⃣ **Медіа + кнопки:**\n"
+            "Відповідь на медіа з `/broadcast_buttons кнопка1:url1`\n\n"
             "**Приклади:**\n"
             "• `/broadcast Привіт всім!`\n"
             "• Відповісти на фото з `/broadcast`\n"
-            "• `/broadcast_buttons Новини | Канал:https://t.me/channel`\n\n"
+            "• `/broadcast_buttons Новини | Канал:https://t.me/channel`\n"
+            "• Відповісти на відео з `/broadcast_buttons Канал:https://t.me/channel`\n\n"
             "⚠️ Розсилка надсилається всім активним користувачам!",
             reply_markup=reply_markup,
             parse_mode='Markdown'
